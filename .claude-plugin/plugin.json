@@ -1,0 +1,7 @@
+{
+  "name": "help-center-audit",
+  "description": "Audit a public help center from inside Claude Code: crawl it politely, find contradictions, stale pages, thin pages, near-duplicates and broken links, and keep only findings whose quotes really appear on the page.",
+  "version": "0.1.0",
+  "license": "MIT",
+  "keywords": ["help-center", "support", "documentation", "audit"]
+}

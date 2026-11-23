@@ -1,0 +1,5 @@
+node_modules/
+help-center-audit-out/
+.DS_Store
+examples/*/pages/
+examples/*/pages.json

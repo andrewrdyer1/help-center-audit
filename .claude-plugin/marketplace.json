@@ -1,0 +1,11 @@
+{
+  "name": "help-center-audit",
+  "owner": { "name": "help-center-audit" },
+  "plugins": [
+    {
+      "name": "help-center-audit",
+      "source": "./",
+      "description": "Audit a public help center from inside Claude Code. Every finding quotes the page it is about, and a quote that is not really on the page is dropped."
+    }
+  ]
+}

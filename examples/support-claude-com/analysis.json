@@ -1,0 +1,16 @@
+{
+  "start": "https://support.claude.com/en/",
+  "pagesRead": 30,
+  "stopped": null,
+  "capped": true,
+  "skipped": {
+    "robots": 0,
+    "notHtml": 0,
+    "failed": []
+  },
+  "brokenLinks": [],
+  "brokenLinksUnchecked": 92,
+  "thinPages": [],
+  "nearDuplicates": [],
+  "saysItWasUpdatedOverTwoYearsAgo": []
+}
