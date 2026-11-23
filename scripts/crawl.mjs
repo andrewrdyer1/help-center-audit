@@ -146,7 +146,9 @@ async function finish(out, queue, checkLinks, host, robots, wait, log, statuses 
       checked++
       try {
         let r = await get(k, { method: 'HEAD' })
-        if (r.status === 405 || r.status === 501) r = await get(k)
+        // Some sites answer HEAD with an error where GET works (Zendesk: 404 on an article's id-only address, which a
+        // GET redirects to the article), so a link is called broken only on GET's answer.
+        if (r.status >= 400) r = await get(k)
         statuses.set(k, r.status)
       } catch { statuses.set(k, 0) }
     }

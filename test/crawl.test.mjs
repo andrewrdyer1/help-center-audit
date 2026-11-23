@@ -58,3 +58,17 @@ test('the page limit is said, not hidden', async () => {
     assert.equal(r.analysis.capped, true)
   } finally { s.close() }
 })
+
+test('a link that fails HEAD but answers GET is not broken', async () => {
+  const s = http.createServer((req, res) => {
+    if (req.url === '/') { res.setHeader('content-type', 'text/html'); return res.end(`<html><title>Help</title><main>${long('Home.')}<a href="/articles/1">One</a><a href="/articles/2">Two</a></main></html>`) }
+    if (req.url === '/articles/1') { res.statusCode = req.method === 'HEAD' ? 404 : 200; return res.end() }
+    res.statusCode = 404; res.end()
+  })
+  await new Promise((ok) => s.listen(0, '127.0.0.1', ok))
+  const base = `http://127.0.0.1:${s.address().port}`
+  try {
+    const r = await crawl({ start: base + '/', pages: 1, delay: 0, checkLinks: 10 })
+    assert.deepEqual(r.analysis.brokenLinks.map((b) => b.to), [base + '/articles/2'])
+  } finally { s.close() }
+})
