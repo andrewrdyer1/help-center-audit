@@ -1,0 +1,32 @@
+{
+  "pagesChecked": 30,
+  "banned": [
+    {
+      "term": "Claude Instant",
+      "reason": "retired model name",
+      "replacement": "a current model name",
+      "pages": []
+    },
+    {
+      "term": "Acceptable Use Policy",
+      "reason": "renamed",
+      "replacement": "Usage Policy",
+      "pages": [
+        {
+          "url": "https://support.claude.com/en/articles/8241253-safeguards-warnings-and-appeals",
+          "count": 1,
+          "excerpt": "...ated Articles API Safeguards Tools Updates to our Acceptable Use Policy (now “Usage Policy”), Consumer Terms of Service,..."
+        }
+      ]
+    }
+  ],
+  "required": [
+    {
+      "text": "This is general information, not legal advice.",
+      "reason": "every legal-topic page carries the disclaimer",
+      "appliesTo": "re:/(privacy|legal|terms)",
+      "checked": 0,
+      "missing": []
+    }
+  ]
+}

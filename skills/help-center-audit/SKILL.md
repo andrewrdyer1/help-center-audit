@@ -44,6 +44,21 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/ground.mjs" pricing.pdf policy.md
 PDF text needs `pdftotext` (poppler). If it says it is not installed, tell the user how to install it, or read the PDF
 yourself and save the text as a `.txt` to pass instead. Each document is cited as `ground:<filename>`.
 
+## 2b. The team's own rules (only if the user wants them)
+
+If the user names retired product names or terms to flag, or wording that must appear on certain pages (a disclaimer, a
+legal line), write them into a rules file (see `rules.example.json` in the plugin) and run it. These are literal
+matches done by code; you do not judge them:
+
+```bash
+node "${CLAUDE_PLUGIN_ROOT}/scripts/rules.mjs" help-center-audit.rules.json
+```
+
+`bannedTerms` take a `term` and optionally a `reason` and `replacement`. `required` takes `text` (at least 20
+characters, so a match means something), an optional `reason`, and `appliesTo`: `*` for every page, `re:<pattern>`
+for a pattern matched against the address or title, or a piece of the address or title. If it says the file has
+problems, fix the file. Do not weaken a rule to make it pass.
+
 ## 3. Read and write findings
 
 Do not read the whole site at once. Work reading by reading:
@@ -93,6 +108,6 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/report.mjs"
 
 `verify.mjs` reads `findings.json` and every `findings/*.json`, writes `verified.json` and tells you what it dropped and
 why. `report.mjs`
-writes `REPORT.md`. Tell the user how many findings were kept and dropped, what the
+writes `REPORT.md`. Tell the user how many findings were kept and dropped, what the rules found if you ran them, what the
 crawl covered, and where `REPORT.md` is. Do not edit the report to add findings that
 verification dropped.

@@ -8,7 +8,7 @@ import { pathToFileURL } from 'node:url'
 const SOURCE = 'disagrees_with_source'
 const LABEL = { contradiction: 'Pages that contradict each other', out_of_date: 'Pages that look out of date', ambiguous: 'Passages that can be read two ways' }
 
-export function renderReport(analysis, verified) {
+export function renderReport(analysis, verified, rules = null) {
   const L = []
   const a = analysis
   L.push(`# Help center audit: ${a.start}`, '')
@@ -40,6 +40,23 @@ export function renderReport(analysis, verified) {
   }
   if (!verified.kept.length && !sources.length) L.push('No findings of this kind held up. That means none were found in the pages read, not that there are none.', '')
 
+  if (rules) {
+    L.push('## Checked against your rules', '')
+    L.push(`Literal matches over ${rules.pagesChecked} pages. A hit means the text is there as written; whether it is a problem is yours to decide.`, '')
+    for (const b of rules.banned) {
+      L.push(`**"${b.term}"**${b.reason ? ` (${b.reason}${b.replacement ? `; use ${b.replacement}` : ''})` : ''}: ${b.pages.length ? `found on ${b.pages.length} page${b.pages.length === 1 ? '' : 's'}` : 'not found'}.`, '')
+      for (const h of b.pages.slice(0, 30)) L.push(`- ${h.url} (${h.count}x)  \n  > ${h.excerpt}`)
+      if (b.pages.length > 30) L.push(`- ... and ${b.pages.length - 30} more`)
+      if (b.pages.length) L.push('')
+    }
+    for (const r of rules.required) {
+      L.push(`**Required:** "${r.text}"${r.reason ? ` (${r.reason})` : ''}: ${r.checked ? `missing from ${r.missing.length} of ${r.checked} page${r.checked === 1 ? '' : 's'} that ${r.appliesTo === '*' ? 'were read' : `match ${r.appliesTo}`}` : `no page read matches ${r.appliesTo}, so nothing was checked`}.`, '')
+      for (const u of r.missing.slice(0, 30)) L.push(`- ${u}`)
+      if (r.missing.length > 30) L.push(`- ... and ${r.missing.length - 30} more`)
+      if (r.missing.length) L.push('')
+    }
+  }
+
   L.push('## Checked by code', '')
   L.push(`**Broken links (${a.brokenLinks.length}).**${a.brokenLinksUnchecked ? ` ${a.brokenLinksUnchecked} more internal links were not checked.` : ''}`, '')
   for (const b of a.brokenLinks.slice(0, 50)) L.push(`- ${b.to} (${b.status || 'no answer'}), linked from ${b.from}`)
@@ -64,7 +81,9 @@ async function main() {
   const dir = i >= 0 ? argv[i + 1] : 'help-center-audit-out'
   const analysis = JSON.parse(await readFile(join(dir, 'analysis.json'), 'utf8'))
   const verified = JSON.parse(await readFile(join(dir, 'verified.json'), 'utf8'))
-  await writeFile(join(dir, 'REPORT.md'), renderReport(analysis, verified))
+  let rules = null
+  try { rules = JSON.parse(await readFile(join(dir, 'rules-results.json'), 'utf8')) } catch { /* no rules were run */ }
+  await writeFile(join(dir, 'REPORT.md'), renderReport(analysis, verified, rules))
   console.log(`Wrote ${join(dir, 'REPORT.md')}`)
 }
 

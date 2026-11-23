@@ -6,7 +6,7 @@ Every finding quotes the pages it is about, and **a quote that is not really on 
 
 ## Sample
 
-[examples/support-claude-com/REPORT.md](examples/support-claude-com/REPORT.md) is a real run on 30 pages of a public help center, with [findings.json](examples/support-claude-com/findings.json) as Claude proposed them. The crawled page text is not included. The audit read 30 pages and the report says so; it is not a verdict on the whole site.
+[examples/support-claude-com/REPORT.md](examples/support-claude-com/REPORT.md) is a real run on 30 pages of a public help center, with [findings.json](examples/support-claude-com/findings.json) as Claude proposed them, plus a run of [rules.example.json](rules.example.json) (see "Checked against your rules"). The crawled page text is not included. The audit read 30 pages and the report says so; it is not a verdict on the whole site.
 
 ## Install
 
@@ -53,12 +53,27 @@ Two kinds of check, with different standing. Code checks are mechanical and repe
 
 A quote must be at least 20 characters and appear on the page or source document it names (curly quotes, dashes and spacing are ignored). A finding is dropped if a quote is missing, if it says anybody was affected, or if it counts people ("312 customers") or states a sum of money that is not in one of its quotes. A limit or price the page itself states ("up to 500 users", "$49") is fine.
 
+### Your own rules
+
+A rules file adds two literal checks, done by code with no judgment ([rules.example.json](rules.example.json)):
+
+| Rule | What it does | What a result means |
+|---|---|---|
+| `bannedTerms` | Finds a term as written (any case, whole words, line breaks ignored), with an optional `reason` and `replacement`. Good for retired product names. | The text is there. The report shows the page and the sentence around it, and leaves the decision to you: a page may mention an old name on purpose ("now called ..."). |
+| `required` | Checks that wording (at least 20 characters) is on every page the rule `appliesTo`: `*` for all, `re:<pattern>` against the address or title, or a piece of either. Good for disclaimers. | The pages listed do not contain the wording. If no page matches `appliesTo`, the report says nothing was checked. |
+
+```
+node scripts/rules.mjs rules.json
+```
+
+A rules file with a mistake is refused with what is wrong, never half applied.
+
 ### What a result says, and does not
 
 - "Contradiction" means two pages differ. It does not say which one is right. "Disagrees with source" means a page and your document differ; it says so, and leaves the decision to you.
 - Counts are about pages, never about customers. Nothing here says how many people a problem reached.
 - An empty section means nothing was found **in the pages read**. The report always states how many pages that was, and whether it stopped at the limit.
-- Not checked: external links, images and alt text, spelling and grammar, tone, accessibility, search ranking, and whether a topic is missing from the help center altogether.
+- Not checked: external links, images and alt text, spelling and grammar, tone, accessibility, search ranking, and whether a topic is missing from the help center altogether. A rule only finds what you wrote down.
 
 ## Bigger sites and source documents
 
@@ -79,6 +94,7 @@ Audit https://help.example.com and compare it with pricing.pdf and refund-policy
 | Crawl | `scripts/crawl.mjs` | Reads up to `--pages` pages (default 60) of one host. Obeys robots.txt and its crawl delay, goes slowly, stays in the start page's language folder, and stops if the site answers 429 or 403 three times in a row. |
 | Mechanical checks | `scripts/crawl.mjs` | Broken internal links, pages under 80 words, near-duplicate pages (shared 5-word shingles), pages that state they were last updated over two years ago. |
 | Reading | Claude | Reads one group of pages at a time, then the pairs that cross groups, then (if given) your source documents, and proposes findings as JSON, each with exact quotes. |
+| Rules | `scripts/rules.mjs` | Optional. Literal checks for retired names and required wording, from a file you write. |
 | Verification | `scripts/verify.mjs` | Keeps a finding only if every quote is found on the page or document it names (ignoring curly quotes, dashes and spacing), a contradiction has quotes from two different pages, a source comparison has one quote from each side, and the wording does not count people or state money that isn't quoted. |
 | Report | `scripts/report.mjs` | Writes `REPORT.md` with what was covered, what was kept and how many proposals were dropped. |
 
@@ -93,6 +109,7 @@ Audit https://help.example.com and compare it with pricing.pdf and refund-policy
 ```bash
 node scripts/crawl.mjs https://help.example.com --pages 200
 node scripts/ground.mjs pricing.pdf          # optional: documents that are right
+node scripts/rules.mjs rules.json            # optional: banned terms, required wording
 # write findings to help-center-audit-out/findings/*.json (see skills/help-center-audit/SKILL.md)
 node scripts/verify.mjs
 node scripts/report.mjs

@@ -53,6 +53,19 @@ The page, dated March 16, 2026, says registration for Japanese Consumption Tax w
 - https://support.claude.com/en/articles/7996921-i-use-claude-in-amazon-bedrock-who-do-i-contact-for-customer-support-inquiries  
   > at the earliest as of FY2026
 
+## Checked against your rules
+
+Literal matches over 30 pages. A hit means the text is there as written; whether it is a problem is yours to decide.
+
+**"Claude Instant"** (retired model name; use a current model name): not found.
+
+**"Acceptable Use Policy"** (renamed; use Usage Policy): found on 1 page.
+
+- https://support.claude.com/en/articles/8241253-safeguards-warnings-and-appeals (1x)  
+  > ...ated Articles API Safeguards Tools Updates to our Acceptable Use Policy (now “Usage Policy”), Consumer Terms of Service,...
+
+**Required:** "This is general information, not legal advice." (every legal-topic page carries the disclaimer): no page read matches re:/(privacy|legal|terms), so nothing was checked.
+
 ## Checked by code
 
 **Broken links (0).** 92 more internal links were not checked.
@@ -69,5 +82,5 @@ The page, dated March 16, 2026, says registration for Japanese Consumption Tax w
 
 ## How to read this
 
-- Every quote above was checked to appear on the page named. A finding whose quote did not was dropped, never shown.
+- Every quote above was checked to appear on the page or source document named. A finding whose quote did not was dropped, never shown.
 - Age is a hint, not a finding: a page can be old and right.

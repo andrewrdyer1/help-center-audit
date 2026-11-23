@@ -1,0 +1,13 @@
+{
+  "bannedTerms": [
+    { "term": "Claude Instant", "reason": "retired model name", "replacement": "a current model name" },
+    { "term": "Acceptable Use Policy", "reason": "renamed", "replacement": "Usage Policy" }
+  ],
+  "required": [
+    {
+      "text": "This is general information, not legal advice.",
+      "appliesTo": "re:/(privacy|legal|terms)",
+      "reason": "every legal-topic page carries the disclaimer"
+    }
+  ]
+}

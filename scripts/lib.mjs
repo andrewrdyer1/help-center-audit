@@ -304,3 +304,58 @@ export function buildBatches(pages, { budgetWords = 12000, crossThreshold = 0.35
     crossBatch,
   }
 }
+
+// ---------------------------------------------------------------------------------------------------------------------
+// The team's own rules: names that must no longer appear, and wording that must appear. Literal matches, no judgment.
+
+const escapeRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+
+/** Checks the shape of a rules file and returns what is wrong with it, or [] if it is usable. */
+export function validateRules(rules) {
+  const errors = []
+  if (!rules || typeof rules !== 'object' || Array.isArray(rules)) return ['the rules file must be a JSON object with "bannedTerms" and/or "required"']
+  for (const k of Object.keys(rules)) if (!['bannedTerms', 'required'].includes(k)) errors.push(`unknown key "${k}"`)
+  for (const [i, b] of (rules.bannedTerms ?? []).entries()) {
+    if (!b || typeof b.term !== 'string' || b.term.trim().length < 2) errors.push(`bannedTerms[${i}]: "term" must be a string of at least 2 characters`)
+    if (b?.replacement !== undefined && typeof b.replacement !== 'string') errors.push(`bannedTerms[${i}]: "replacement" must be a string`)
+  }
+  for (const [i, r] of (rules.required ?? []).entries()) {
+    if (!r || typeof r.text !== 'string' || r.text.trim().length < MIN_QUOTE) errors.push(`required[${i}]: "text" must be a string of at least ${MIN_QUOTE} characters, so a match means something`)
+    if (r?.appliesTo !== undefined && typeof r.appliesTo !== 'string') errors.push(`required[${i}]: "appliesTo" must be a string`)
+    if (typeof r?.appliesTo === 'string' && r.appliesTo.startsWith('re:')) { try { new RegExp(r.appliesTo.slice(3), 'i') } catch { errors.push(`required[${i}]: "appliesTo" is not a valid pattern`) } }
+  }
+  return errors
+}
+
+/** `appliesTo`: "*" or empty (every page), "re:<pattern>", or a piece of the address or title. */
+export function appliesTo(spec, page) {
+  if (!spec || spec === '*') return true
+  if (spec.startsWith('re:')) return new RegExp(spec.slice(3), 'i').test(page.url) || new RegExp(spec.slice(3), 'i').test(page.title ?? '')
+  const s = spec.toLowerCase()
+  return page.url.toLowerCase().includes(s) || (page.title ?? '').toLowerCase().includes(s)
+}
+
+function excerpt(text, index, length) {
+  const from = Math.max(0, index - 50)
+  const to = Math.min(text.length, index + length + 50)
+  return (from > 0 ? '...' : '') + text.slice(from, to).replace(/\s+/g, ' ').trim() + (to < text.length ? '...' : '')
+}
+
+export function checkRules(rules, pages) {
+  const banned = (rules.bannedTerms ?? []).map((b) => {
+    const re = new RegExp(`(?<![\\p{L}\\p{N}])${escapeRe(b.term.trim()).replace(/\s+/g, '\\s+')}(?![\\p{L}\\p{N}])`, 'giu')
+    const hits = []
+    for (const p of pages) {
+      const found = [...p.text.matchAll(re)]
+      if (found.length) hits.push({ url: p.url, count: found.length, excerpt: excerpt(p.text, found[0].index, found[0][0].length) })
+    }
+    return { term: b.term.trim(), reason: b.reason ?? null, replacement: b.replacement ?? null, pages: hits }
+  })
+  const required = (rules.required ?? []).map((r) => {
+    const scope = pages.filter((p) => appliesTo(r.appliesTo, p))
+    const want = normalize(r.text)
+    const missing = scope.filter((p) => !normalize(p.text).includes(want)).map((p) => p.url)
+    return { text: r.text, reason: r.reason ?? null, appliesTo: r.appliesTo || '*', checked: scope.length, missing }
+  })
+  return { pagesChecked: pages.length, banned, required }
+}
