@@ -73,6 +73,31 @@ export function allowedByRobots(robots, pathAndQuery) {
   return best ? best.allow : true
 }
 
+/**
+ * The language folder in an address, if it has one: /en, /en-us, /hc/en-us. A two-letter folder counts only first
+ * (/en/...); a language with a region (en-us, pt-br) counts anywhere. Null when there is none.
+ */
+export function languageFolder(pathname) {
+  const parts = pathname.split('/').filter(Boolean)
+  let cut = parts.findIndex((p) => /^[a-z]{2}-[a-z]{2,4}$/i.test(p))
+  if (cut < 0 && /^[a-z]{2}$/i.test(parts[0] ?? '')) cut = 0
+  return cut < 0 ? null : '/' + parts.slice(0, cut + 1).join('/')
+}
+
+/**
+ * The folder a crawl stays in. Starting at a folder (/docs) keeps the crawl inside it; starting inside a language
+ * folder (/en/articles/1, /hc/en-us) keeps it in that language, or every article is read once per language. The root
+ * is the whole host.
+ */
+export function scopeOf(pathname) {
+  const lang = languageFolder(pathname)
+  if (lang) return lang
+  const p = pathname.replace(/\/+$/, '')
+  return p || '/'
+}
+
+export const inScope = (scope, pathname) => scope === '/' || pathname === scope || pathname.startsWith(scope + '/')
+
 function stripBlocks(html, tags) {
   let out = html
   for (const t of tags) out = out.replace(new RegExp(`<${t}\\b[\\s\\S]*?</${t}>`, 'gi'), ' ')

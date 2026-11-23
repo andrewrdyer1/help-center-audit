@@ -22,9 +22,10 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/crawl.mjs" <url> --pages 60
 ```
 
 `--pages` is how many pages to read (default 60; ask the user if the site is bigger and they want all of it, a
-few hundred is fine, it only takes minutes). It obeys robots.txt and its crawl delay, stays on the one host and in the
-start page's language folder, goes at most a couple of pages a second, and stops if the site pushes back (429 or 403
-three times). It writes:
+few hundred is fine, it only takes minutes). It obeys robots.txt and its crawl delay, stays on the one host and inside
+the folder it starts in (start at `https://example.com/docs` and it reads only `/docs`; start inside a language folder
+such as `/hc/en-us` and it stays in that language), goes at most a couple of pages a second, and stops if the site
+pushes back (429 or 403 three times). Start at the help center's home, not at one article. It writes:
 
 - `pages.json` and `pages/NNN.txt`: the text of each page.
 - `analysis.json`: thin pages, near-duplicates, broken links, pages that say they were last updated long ago.

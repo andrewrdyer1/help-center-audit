@@ -13,7 +13,7 @@ export function renderReport(analysis, verified, rules = null) {
   const a = analysis
   L.push(`# Help center audit: ${a.start}`, '')
   L.push(`This report is about the **content** of the help center. It says what is on the pages. It does not say who was affected or what anything costs.`, '')
-  L.push(`**Covered:** ${a.pagesRead} pages read${a.capped ? ', stopped at the page limit (there are more pages than this audit read)' : ''}${a.stopped ? `. Stopped early: ${a.stopped}` : ''}.`, '')
+  L.push(`**Covered:** ${a.pagesRead} pages read${a.scope && a.scope !== '/' ? ` under ${a.scope}` : ''}${a.capped ? ', stopped at the page limit (there are more pages than this audit read)' : ''}${a.stopped ? `. Stopped early: ${a.stopped}` : ''}.`, '')
 
   L.push('## What a reader of the pages can check', '')
   for (const kind of Object.keys(LABEL)) {  // source-document findings have their own section below

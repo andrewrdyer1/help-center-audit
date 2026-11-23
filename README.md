@@ -91,7 +91,7 @@ Audit https://help.example.com and compare it with pricing.pdf and refund-policy
 
 | Step | Who does it | What |
 |---|---|---|
-| Crawl | `scripts/crawl.mjs` | Reads up to `--pages` pages (default 60) of one host. Obeys robots.txt and its crawl delay, goes slowly, stays in the start page's language folder, and stops if the site answers 429 or 403 three times in a row. |
+| Crawl | `scripts/crawl.mjs` | Reads up to `--pages` pages (default 60) of one host. Obeys robots.txt and its crawl delay, goes slowly, stays inside the folder it starts in (`/docs` reads only `/docs`; a language folder such as `/hc/en-us` keeps it in that language), and stops if the site answers 429 or 403 three times in a row. |
 | Mechanical checks | `scripts/crawl.mjs` | Broken internal links, pages under 80 words, near-duplicate pages (shared 5-word shingles), pages that state they were last updated over two years ago. |
 | Reading | Claude | Reads one group of pages at a time, then the pairs that cross groups, then (if given) your source documents, and proposes findings as JSON, each with exact quotes. |
 | Rules | `scripts/rules.mjs` | Optional. Literal checks for retired names and required wording, from a file you write. |

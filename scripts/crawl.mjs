@@ -5,7 +5,7 @@
 import { mkdir, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
-import { allowedByRobots, buildBatches, htmlToPage, nearDuplicates, parseRobots, statedUpdate, THIN_WORDS, wordCount } from './lib.mjs'
+import { allowedByRobots, buildBatches, htmlToPage, inScope, languageFolder, nearDuplicates, parseRobots, scopeOf, statedUpdate, THIN_WORDS, wordCount } from './lib.mjs'
 
 const UA = 'help-center-audit/0.1 (Claude Code plugin; reads public pages only)'
 const MIN_DELAY_MS = 400
@@ -44,17 +44,19 @@ export async function crawl({ start, pages = 60, delay = 600, checkLinks = 80, l
   } catch { /* no robots.txt is allowed */ }
   const wait = Math.max(MIN_DELAY_MS, delay, (robots.crawlDelay ?? 0) * 1000)
 
-  // A start page under a language folder (/en/...) keeps the crawl in that language, or every article is read once per language.
-  const locale = origin.pathname.split('/')[1]
-  const localePrefix = /^[a-z]{2}(-[a-z]{2,4})?$/i.test(locale ?? '') ? `/${locale}` : null
-  const inScope = (u) => !localePrefix || u.pathname === localePrefix || u.pathname.startsWith(localePrefix + '/')
+  // The crawl stays in the folder it started in (scopeOf). A start at the root that redirects into a language folder
+  // (/ to /hc/en-us) takes that folder once the start page answers.
+  let scope = scopeOf(origin.pathname)
+  const isInScope = (u) => inScope(scope, u.pathname)
 
-  const queue = [keyOf(origin.href)]
+  const startKey = keyOf(origin.href)
+  const queue = [startKey]
   const seen = new Set(queue)
+  const read = new Set()  // addresses of pages already read, after redirects
   const enqueue = (href) => {
     let k
     try { k = keyOf(href) } catch { return }
-    if (new URL(k).host !== host || !inScope(new URL(k)) || seen.has(k)) return
+    if (new URL(k).host !== host || !isInScope(new URL(k)) || seen.has(k)) return
     seen.add(k)
     queue.push(k)
   }
@@ -83,6 +85,8 @@ export async function crawl({ start, pages = 60, delay = 600, checkLinks = 80, l
   while (queue.length && out.pages.length < pages) {
     const url = queue.shift()
     const u = new URL(url)
+    // Already read under another address (a redirect landed on it), or queued before the scope narrowed: skip unfetched.
+    if (read.has(url) || !isInScope(u)) continue
     if (!allowedByRobots(robots, u.pathname + u.search)) { out.skipped.robots.push(url); continue }
     await sleep(wait)
     let res
@@ -100,7 +104,14 @@ export async function crawl({ start, pages = 60, delay = 600, checkLinks = 80, l
     const html = await res.text()
     const page = htmlToPage(html, finalUrl.href)
     const finalKey = keyOf(finalUrl.href)
-    if (finalKey !== url) { seen.add(finalKey); if (out.pages.some((p) => p.url === finalKey)) continue }
+    if (url === startKey && finalKey !== url && (scope === '/' || !inScope(scope, finalUrl.pathname))) {
+      // The start page redirected: from the root, into a language folder; from a folder, to wherever it landed.
+      scope = scope === '/' ? (languageFolder(finalUrl.pathname) ?? '/') : scopeOf(finalUrl.pathname)
+    }
+    if (!isInScope(finalUrl)) { out.skipped.failed.push({ url, reason: `redirects out of ${scope} to ${finalUrl.pathname}` }); continue }
+    seen.add(finalKey)
+    if (read.has(finalKey)) continue
+    read.add(finalKey)
     const words = wordCount(page.text)
     out.pages.push({
       url: finalKey,
@@ -114,7 +125,8 @@ export async function crawl({ start, pages = 60, delay = 600, checkLinks = 80, l
     log(`${out.pages.length}/${pages} ${finalKey}`)
     for (const l of page.links) enqueue(l)
   }
-  if (!out.stopped && queue.length) out.capped = true
+  out.scope = scope
+  if (!out.stopped && queue.some((k) => !read.has(k) && isInScope(new URL(k)))) out.capped = true
   return finish(out, queue, checkLinks, host, robots, wait, log, statuses)
 }
 
@@ -152,6 +164,7 @@ async function finish(out, queue, checkLinks, host, robots, wait, log, statuses 
   const old = out.pages.filter((p) => p.statedUpdate && new Date(p.statedUpdate.iso) < cutoff).map((p) => ({ url: p.url, says: p.statedUpdate.text }))
   const analysis = {
     start: out.start,
+    scope: out.scope ?? null,
     pagesRead: out.pages.length,
     stopped: out.stopped,
     capped: out.capped,
@@ -181,7 +194,7 @@ async function main() {
   const plan = buildBatches(result.pages, { budgetWords: Number(flag('budget', 12000)) })
   await writeFile(join(outDir, 'batches.json'), JSON.stringify(plan, null, 2))
   const a = result.analysis
-  console.log(`Read ${a.pagesRead} pages from ${result.host}${a.capped ? ' (stopped at the page limit; there are more)' : ''}${a.stopped ? ` (stopped early: ${a.stopped})` : ''}.`)
+  console.log(`Read ${a.pagesRead} pages from ${result.host}${a.scope && a.scope !== '/' ? ` under ${a.scope}` : ''}${a.capped ? ' (stopped at the page limit; there are more)' : ''}${a.stopped ? ` (stopped early: ${a.stopped})` : ''}.`)
   console.log(`Broken links: ${a.brokenLinks.length}. Thin pages: ${a.thinPages.length}. Near-duplicate pairs: ${a.nearDuplicates.length}. Pages saying they were updated over two years ago: ${a.saysItWasUpdatedOverTwoYearsAgo.length}.`)
   console.log(`Grouped into ${plan.batches.length} reading${plan.batches.length === 1 ? '' : 's'} of up to ${plan.budgetWords} words (batches.json), with ${plan.crossBatch.length} similar page pairs that cross groups.`)
   console.log(`Written to ${outDir}/ (pages.json, analysis.json, batches.json, pages/*.txt).`)
