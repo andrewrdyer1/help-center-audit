@@ -29,6 +29,36 @@ Audit the help center at https://help.example.com
 
 Or invoke the skill directly with `/help-center-audit:help-center-audit`. The result is `help-center-audit-out/REPORT.md` in your current directory.
 
+## What it checks
+
+Two kinds of check, with different standing. Code checks are mechanical and repeatable. Reading checks are Claude's judgment, kept only when the quotes hold up.
+
+### Checked by code
+
+| Check | What counts | What a result means |
+|---|---|---|
+| Broken links | An internal link (same site) that answers 404, 410, a server error, or nothing. Up to 80 unseen links are checked per run, and the report says how many were not. | A reader who clicks it lands nowhere. External links are not checked. |
+| Thin pages | Fewer than 80 words of text after navigation, header and footer are removed. | The page may not answer anything on its own. Some are fine, such as a short "Where can I find the API docs?" |
+| Near-duplicates | Two pages sharing at least 80% of their 5-word phrases. | Probably the same article published twice, or a copy that will drift apart when one is edited. |
+| Says it is old | A page that states "Last updated: ..." (or "Updated", "Last reviewed") with a date over two years ago. | A hint, not a finding. A page can be old and right. |
+
+### Found by reading (Claude), then checked by code
+
+| Kind | What it is | What it needs |
+|---|---|---|
+| `contradiction` | Two pages state different things about the same subject: a number, a limit, a time frame, a list. | Exact quotes from **two different pages**. |
+| `out_of_date` | A page that itself shows it is stale: a temporary notice with no date, a retired name, a date long past. | An exact quote from the page. |
+| `ambiguous` | A passage a reader could take two ways, for example a list that looks complete but isn't. | An exact quote from the page. |
+
+A quote must be at least 20 characters and appear on the page it names (curly quotes, dashes and spacing are ignored). A finding is dropped if a quote is missing, if it counts people ("312 customers"), says anybody was affected, or states a sum of money.
+
+### What a result says, and does not
+
+- "Contradiction" means two pages differ. It does not say which one is right.
+- Counts are about pages, never about customers. Nothing here says how many people a problem reached.
+- An empty section means nothing was found **in the pages read**. The report always states how many pages that was, and whether it stopped at the limit.
+- Not checked: external links, images and alt text, spelling and grammar, tone, accessibility, search ranking, and whether a topic is missing from the help center altogether.
+
 ## How it works
 
 | Step | Who does it | What |
