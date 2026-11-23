@@ -1,11 +1,11 @@
 #!/usr/bin/env node
 // Reads a public help center politely and writes what it found to help-center-audit-out/.
-//   node crawl.mjs <url> [--pages 60] [--delay 600] [--out help-center-audit-out] [--check-links 80]
+//   node crawl.mjs <url> [--pages 60] [--delay 600] [--out help-center-audit-out] [--check-links 80] [--budget 12000]
 // Obeys robots.txt and its crawl delay, stays on one host, and stops when the site pushes back.
 import { mkdir, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
-import { allowedByRobots, htmlToPage, nearDuplicates, parseRobots, statedUpdate, THIN_WORDS, wordCount } from './lib.mjs'
+import { allowedByRobots, buildBatches, htmlToPage, nearDuplicates, parseRobots, statedUpdate, THIN_WORDS, wordCount } from './lib.mjs'
 
 const UA = 'help-center-audit/0.1 (Claude Code plugin; reads public pages only)'
 const MIN_DELAY_MS = 400
@@ -169,18 +169,22 @@ async function main() {
   const argv = process.argv.slice(2)
   const flag = (name, dflt) => { const i = argv.indexOf(`--${name}`); return i >= 0 ? argv[i + 1] : dflt }
   const start = argv.find((a, i) => !a.startsWith('--') && !(argv[i - 1] ?? '').startsWith('--'))
-  if (!start || !/^https?:\/\//i.test(start)) { console.error('usage: crawl.mjs <https://help.example.com> [--pages 60] [--delay 600] [--out dir] [--check-links 80]'); process.exit(2) }
+  if (!start || !/^https?:\/\//i.test(start)) { console.error('usage: crawl.mjs <https://help.example.com> [--pages 60] [--delay 600] [--out dir] [--check-links 80] [--budget 12000]'); process.exit(2) }
   const outDir = flag('out', 'help-center-audit-out')
   const result = await crawl({ start, pages: Number(flag('pages', 60)), delay: Number(flag('delay', 600)), checkLinks: Number(flag('check-links', 80)), log: (m) => console.error(m) })
   await mkdir(join(outDir, 'pages'), { recursive: true })
   const pages = result.pages.map(({ links, ...p }) => p)
   await writeFile(join(outDir, 'pages.json'), JSON.stringify({ start: result.start, readAt: result.startedAt, pages }, null, 2))
   await writeFile(join(outDir, 'analysis.json'), JSON.stringify(result.analysis, null, 2))
-  await Promise.all(result.pages.map((p, i) => writeFile(join(outDir, 'pages', `${String(i + 1).padStart(3, '0')}.txt`), `URL: ${p.url}\nTITLE: ${p.title}\n\n${p.text}\n`)))
+  result.pages.forEach((p, i) => { p.file = `pages/${String(i + 1).padStart(3, '0')}.txt` })
+  await Promise.all(result.pages.map((p) => writeFile(join(outDir, p.file), `URL: ${p.url}\nTITLE: ${p.title}\n\n${p.text}\n`)))
+  const plan = buildBatches(result.pages, { budgetWords: Number(flag('budget', 12000)) })
+  await writeFile(join(outDir, 'batches.json'), JSON.stringify(plan, null, 2))
   const a = result.analysis
   console.log(`Read ${a.pagesRead} pages from ${result.host}${a.capped ? ' (stopped at the page limit; there are more)' : ''}${a.stopped ? ` (stopped early: ${a.stopped})` : ''}.`)
   console.log(`Broken links: ${a.brokenLinks.length}. Thin pages: ${a.thinPages.length}. Near-duplicate pairs: ${a.nearDuplicates.length}. Pages saying they were updated over two years ago: ${a.saysItWasUpdatedOverTwoYearsAgo.length}.`)
-  console.log(`Written to ${outDir}/ (pages.json, analysis.json, pages/*.txt).`)
+  console.log(`Grouped into ${plan.batches.length} reading${plan.batches.length === 1 ? '' : 's'} of up to ${plan.budgetWords} words (batches.json), with ${plan.crossBatch.length} similar page pairs that cross groups.`)
+  console.log(`Written to ${outDir}/ (pages.json, analysis.json, batches.json, pages/*.txt).`)
 }
 
-if (import.meta.url === pathToFileURL(process.argv[1]).href) main().catch((e) => { console.error(e.message); process.exit(1) })
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) main().catch((e) => { console.error(e.message); process.exit(1) })

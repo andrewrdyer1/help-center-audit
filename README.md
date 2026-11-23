@@ -49,24 +49,37 @@ Two kinds of check, with different standing. Code checks are mechanical and repe
 | `contradiction` | Two pages state different things about the same subject: a number, a limit, a time frame, a list. | Exact quotes from **two different pages**. |
 | `out_of_date` | A page that itself shows it is stale: a temporary notice with no date, a retired name, a date long past. | An exact quote from the page. |
 | `ambiguous` | A passage a reader could take two ways, for example a list that looks complete but isn't. | An exact quote from the page. |
+| `disagrees_with_source` | A help page and a document you say is right (a pricing PDF, a policy, terms) state different things. | An exact quote from **each**: one from the page, one from the document. |
 
-A quote must be at least 20 characters and appear on the page it names (curly quotes, dashes and spacing are ignored). A finding is dropped if a quote is missing, if it counts people ("312 customers"), says anybody was affected, or states a sum of money.
+A quote must be at least 20 characters and appear on the page or source document it names (curly quotes, dashes and spacing are ignored). A finding is dropped if a quote is missing, if it says anybody was affected, or if it counts people ("312 customers") or states a sum of money that is not in one of its quotes. A limit or price the page itself states ("up to 500 users", "$49") is fine.
 
 ### What a result says, and does not
 
-- "Contradiction" means two pages differ. It does not say which one is right.
+- "Contradiction" means two pages differ. It does not say which one is right. "Disagrees with source" means a page and your document differ; it says so, and leaves the decision to you.
 - Counts are about pages, never about customers. Nothing here says how many people a problem reached.
 - An empty section means nothing was found **in the pages read**. The report always states how many pages that was, and whether it stopped at the limit.
 - Not checked: external links, images and alt text, spelling and grammar, tone, accessibility, search ranking, and whether a topic is missing from the help center altogether.
+
+## Bigger sites and source documents
+
+**More pages.** `--pages` is only a politeness cap, not a limit of the tool: `--pages 500` reads 500 pages in a few minutes. Reading them is what doesn't fit in one go, so the crawl also writes `batches.json`: pages grouped by what they are about (TF-IDF similarity on their words), each group at most `--budget` words (default 12,000). Claude reads one group at a time. The pairs of similar pages that landed in different groups are listed as `crossBatch`, and Claude compares those pairs separately, so a contradiction between two groups is still looked for.
+
+**Source documents.** Give it the documents that are right:
+
+```
+Audit https://help.example.com and compare it with pricing.pdf and refund-policy.md
+```
+
+`scripts/ground.mjs` reads `.pdf`, `.md`, `.txt` and `.html`. PDFs need `pdftotext` from poppler (`brew install poppler` or `apt install poppler-utils`); without it the tool says so and suggests saving the PDF's text as `.txt` instead. Each document is cited as `ground:<filename>`, and a finding needs one exact quote from the page and one from the document, both checked.
 
 ## How it works
 
 | Step | Who does it | What |
 |---|---|---|
-| Crawl | `scripts/crawl.mjs` | Reads up to 60 pages of one host. Obeys robots.txt and its crawl delay, goes slowly, stays in the start page's language folder, and stops if the site answers 429 or 403 three times in a row. |
+| Crawl | `scripts/crawl.mjs` | Reads up to `--pages` pages (default 60) of one host. Obeys robots.txt and its crawl delay, goes slowly, stays in the start page's language folder, and stops if the site answers 429 or 403 three times in a row. |
 | Mechanical checks | `scripts/crawl.mjs` | Broken internal links, pages under 80 words, near-duplicate pages (shared 5-word shingles), pages that state they were last updated over two years ago. |
-| Reading | Claude | Compares pages that cover the same subject and proposes findings as JSON, each with exact quotes. |
-| Verification | `scripts/verify.mjs` | Keeps a finding only if every quote is found on the page it names (ignoring curly quotes, dashes and spacing), a contradiction has quotes from two different pages, and the wording does not count people or money. |
+| Reading | Claude | Reads one group of pages at a time, then the pairs that cross groups, then (if given) your source documents, and proposes findings as JSON, each with exact quotes. |
+| Verification | `scripts/verify.mjs` | Keeps a finding only if every quote is found on the page or document it names (ignoring curly quotes, dashes and spacing), a contradiction has quotes from two different pages, a source comparison has one quote from each side, and the wording does not count people or state money that isn't quoted. |
 | Report | `scripts/report.mjs` | Writes `REPORT.md` with what was covered, what was kept and how many proposals were dropped. |
 
 ## What it will not say
@@ -78,8 +91,9 @@ A quote must be at least 20 characters and appear on the page it names (curly qu
 ## Run the scripts yourself
 
 ```bash
-node scripts/crawl.mjs https://help.example.com --pages 60
-# write help-center-audit-out/findings.json (see skills/help-center-audit/SKILL.md)
+node scripts/crawl.mjs https://help.example.com --pages 200
+node scripts/ground.mjs pricing.pdf          # optional: documents that are right
+# write findings to help-center-audit-out/findings/*.json (see skills/help-center-audit/SKILL.md)
 node scripts/verify.mjs
 node scripts/report.mjs
 ```

@@ -5,6 +5,7 @@ import { readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 
+const SOURCE = 'disagrees_with_source'
 const LABEL = { contradiction: 'Pages that contradict each other', out_of_date: 'Pages that look out of date', ambiguous: 'Passages that can be read two ways' }
 
 export function renderReport(analysis, verified) {
@@ -15,17 +16,29 @@ export function renderReport(analysis, verified) {
   L.push(`**Covered:** ${a.pagesRead} pages read${a.capped ? ', stopped at the page limit (there are more pages than this audit read)' : ''}${a.stopped ? `. Stopped early: ${a.stopped}` : ''}.`, '')
 
   L.push('## What a reader of the pages can check', '')
-  for (const kind of Object.keys(LABEL)) {
+  for (const kind of Object.keys(LABEL)) {  // source-document findings have their own section below
     const rows = verified.kept.filter((f) => f.kind === kind)
     if (!rows.length) continue
     L.push(`### ${LABEL[kind]} (${rows.length})`, '')
     for (const f of rows) {
       L.push(`**${f.title}**`, '', f.claim, '')
-      for (const e of f.evidence) L.push(`- ${e.url}  \n  > ${e.quote.replace(/\n+/g, ' ')}`)
+      for (const e of f.evidence) L.push(`- ${e.url.startsWith('ground:') ? `Source document: ${e.url.slice(7)}` : e.url}  \n  > ${e.quote.replace(/\n+/g, ' ')}`)
       L.push('')
     }
   }
-  if (!verified.kept.length) L.push('No findings of this kind held up. That means none were found in the pages read, not that there are none.', '')
+  const sources = verified.sources ?? []
+  if (sources.length) {
+    const rows = verified.kept.filter((f) => f.kind === SOURCE)
+    L.push('## Compared with your source documents', '')
+    L.push(`Read: ${sources.map((d) => `${d.name} (${d.words} words)`).join(', ')}. A finding here means a help center page and a source document state different things. It does not say which is right.`, '')
+    for (const f of rows) {
+      L.push(`**${f.title}**`, '', f.claim, '')
+      for (const e of f.evidence) L.push(`- ${e.url.startsWith('ground:') ? `Source document: ${e.url.slice(7)}` : e.url}  \n  > ${e.quote.replace(/\n+/g, ' ')}`)
+      L.push('')
+    }
+    if (!rows.length) L.push('No disagreements held up in what was compared. That means none were found, not that the source is fully covered: only the pages and passages Claude compared were checked.', '')
+  }
+  if (!verified.kept.length && !sources.length) L.push('No findings of this kind held up. That means none were found in the pages read, not that there are none.', '')
 
   L.push('## Checked by code', '')
   L.push(`**Broken links (${a.brokenLinks.length}).**${a.brokenLinksUnchecked ? ` ${a.brokenLinksUnchecked} more internal links were not checked.` : ''}`, '')
@@ -39,7 +52,7 @@ export function renderReport(analysis, verified) {
   L.push('')
 
   L.push('## How to read this', '')
-  L.push('- Every quote above was checked to appear on the page named. A finding whose quote did not was dropped, never shown.')
+  L.push('- Every quote above was checked to appear on the page or source document named. A finding whose quote did not was dropped, never shown.')
   if (verified.dropped.length) L.push(`- ${verified.dropped.length} proposed finding${verified.dropped.length === 1 ? ' was' : 's were'} dropped because a quote was not on the page or a rule was not met.`)
   L.push('- Age is a hint, not a finding: a page can be old and right.', '')
   return L.join('\n')
@@ -55,4 +68,4 @@ async function main() {
   console.log(`Wrote ${join(dir, 'REPORT.md')}`)
 }
 
-if (import.meta.url === pathToFileURL(process.argv[1]).href) main().catch((e) => { console.error(e.message); process.exit(1) })
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) main().catch((e) => { console.error(e.message); process.exit(1) })

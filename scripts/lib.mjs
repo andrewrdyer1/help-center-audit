@@ -142,18 +142,36 @@ export function statedUpdate(text) {
 }
 
 export const KINDS = ['contradiction', 'out_of_date', 'ambiguous']
+/** Compares the help center with a document the team says is right. Needs one quote from each side. */
+export const SOURCE_KIND = 'disagrees_with_source'
+export const GROUND_PREFIX = 'ground:'
+export const isGround = (url) => typeof url === 'string' && url.startsWith(GROUND_PREFIX)
 
 // A finding about content says what is on the pages. It never says who was affected.
-const PEOPLE_CLAIM = /\b\d[\d,]*\s+(?:customers?|users?|people|visitors?|tickets?|conversations?)\b|\b(?:customers?|users?|people)\s+(?:are|were|have been|will be)\s+(?:affected|confused|misled)\b|\$\s?\d/i
+const AFFECTED_CLAIM = /\b(?:customers?|users?|people)\s+(?:are|were|have been|will be)\s+(?:affected|confused|misled)\b/i
+// A count of people, or a sum of money, may appear only if it is in a quote: "up to 500 users" is a limit the page states.
+const COUNT_OF_PEOPLE = /\b\d[\d,]*\s+(?:customers?|users?|people|visitors?|tickets?|conversations?)\b/gi
+const MONEY = /\$\s?\d[\d,]*(?:\.\d+)?/g
 
 export const THIN_WORDS = 80
+
+const squash = (s) => normalize(s).replace(/[\s,]/g, '')
+
+function claimsOutsideQuotes(text, evidence) {
+  const quoted = squash(evidence.map((e) => e.quote ?? '').join(' '))
+  for (const re of [COUNT_OF_PEOPLE, MONEY]) {
+    for (const m of text.matchAll(re)) if (!quoted.includes(squash(m[0]))) return m[0]
+  }
+  return null
+}
 
 /** Every rule a finding has to meet, and a reason when it does not. Evidence is checked against `pages` (url -> text). */
 export function checkFinding(f, pages) {
   if (!f || typeof f !== 'object') return { ok: false, reason: 'not an object' }
-  if (!KINDS.includes(f.kind)) return { ok: false, reason: `unknown kind "${f.kind}"` }
+  const isSource = f.kind === SOURCE_KIND
+  if (!isSource && !KINDS.includes(f.kind)) return { ok: false, reason: `unknown kind "${f.kind}"` }
   if (typeof f.title !== 'string' || !f.title.trim() || typeof f.claim !== 'string' || !f.claim.trim()) return { ok: false, reason: 'missing title or claim' }
-  if (PEOPLE_CLAIM.test(f.title) || PEOPLE_CLAIM.test(f.claim)) return { ok: false, reason: 'counts or names who was affected, or a sum of money' }
+  if (AFFECTED_CLAIM.test(f.title) || AFFECTED_CLAIM.test(f.claim)) return { ok: false, reason: 'says who was affected' }
   if (!Array.isArray(f.evidence) || f.evidence.length === 0) return { ok: false, reason: 'no evidence' }
   const kept = []
   for (const e of f.evidence) {
@@ -162,6 +180,127 @@ export function checkFinding(f, pages) {
     if (!quoteAppears(String(e.quote ?? ''), text)) return { ok: false, reason: `quote not found on ${e.url}: "${String(e.quote ?? '').slice(0, 60)}"` }
     kept.push({ url: e.url, quote: e.quote })
   }
-  if (f.kind === 'contradiction' && new Set(kept.map((e) => e.url)).size < 2) return { ok: false, reason: 'a contradiction needs quotes from two different pages' }
+  const outside = claimsOutsideQuotes(`${f.title} ${f.claim}`, kept)
+  if (outside) return { ok: false, reason: `counts people or states money not found in a quote ("${outside}")` }
+  const fromSource = kept.filter((e) => isGround(e.url))
+  const fromPages = kept.filter((e) => !isGround(e.url))
+  if (isSource) {
+    if (!fromSource.length || !fromPages.length) return { ok: false, reason: 'a comparison with a source document needs one quote from the source and one from a help center page' }
+  } else {
+    if (fromSource.length) return { ok: false, reason: 'quotes from a source document belong to a disagrees_with_source finding' }
+    if (f.kind === 'contradiction' && new Set(fromPages.map((e) => e.url)).size < 2) return { ok: false, reason: 'a contradiction needs quotes from two different pages' }
+  }
   return { ok: true, finding: { kind: f.kind, title: f.title.trim(), claim: f.claim.trim(), evidence: kept } }
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
+// Batching. A big help center does not fit in one reading, so pages are grouped by what they are about, one group per
+// reading, and the pairs that cross groups are listed so a comparison across groups is still made.
+
+const STOP = new Set(('the and for you your are with that this from have has can will not but all any our out use used using how what when where which who why '
+  + 'was were been being into onto over under than then them they their there here also may might must should would could just more most some such only other '
+  + 'about after before between through while does did doing done get got make made need needs want yes none each every very much many one two three see learn '
+  + 'help center article articles please contact support click select').split(' '))
+
+function termCounts(text) {
+  const counts = new Map()
+  for (const w of normalize(text).match(/[a-z][a-z0-9'-]{2,}/g) ?? []) {
+    if (STOP.has(w)) continue
+    counts.set(w, (counts.get(w) ?? 0) + 1)
+  }
+  return counts
+}
+
+function addInto(acc, vec, k = 1) {
+  for (const [t, w] of vec) acc.set(t, (acc.get(t) ?? 0) + w * k)
+}
+
+function dot(a, b) {
+  const [small, big] = a.size <= b.size ? [a, b] : [b, a]
+  let sum = 0
+  for (const [t, w] of small) { const o = big.get(t); if (o) sum += w * o }
+  return sum
+}
+
+function norm(vec) {
+  let n = 0
+  for (const w of vec.values()) n += w * w
+  return Math.sqrt(n)
+}
+
+/** One sparse, length-normalized TF-IDF vector per page. Terms in every page, or in only one, carry no grouping signal. */
+export function topicVectors(pages, termsPerPage = 60) {
+  const counts = pages.map((p) => termCounts(p.text))
+  const df = new Map()
+  for (const c of counts) for (const t of c.keys()) df.set(t, (df.get(t) ?? 0) + 1)
+  const n = pages.length
+  return counts.map((c) => {
+    const weighted = []
+    for (const [t, f] of c) {
+      const d = df.get(t)
+      if (d < 2 || d === n) continue
+      weighted.push([t, (1 + Math.log(f)) * Math.log(n / d)])
+    }
+    weighted.sort((a, b) => b[1] - a[1])
+    const vec = new Map(weighted.slice(0, termsPerPage))
+    const len = norm(vec) || 1
+    for (const [t, w] of vec) vec.set(t, w / len)
+    return vec
+  })
+}
+
+/**
+ * Groups pages into readings of at most `budgetWords` each, most-alike pages together, and lists the most alike pairs
+ * that ended up in different groups (`crossBatch`), which are the comparisons a group-by-group reading would miss.
+ */
+export function buildBatches(pages, { budgetWords = 12000, crossThreshold = 0.35, crossPerPage = 3, crossMax = 150 } = {}) {
+  const vecs = topicVectors(pages)
+  const words = pages.map((p) => p.words ?? wordCount(p.text))
+  const left = new Set(pages.map((_, i) => i))
+  const batches = []
+  while (left.size) {
+    const seed = left.values().next().value
+    left.delete(seed)
+    const members = [seed]
+    const centroid = new Map(vecs[seed])
+    let total = words[seed]
+    while (left.size) {
+      let best = -1
+      let bestScore = -1
+      for (const i of left) {
+        if (total + words[i] > budgetWords) continue
+        const sc = dot(vecs[i], centroid)
+        if (sc > bestScore) { bestScore = sc; best = i }
+      }
+      if (best < 0) break
+      left.delete(best)
+      members.push(best)
+      addInto(centroid, vecs[best])
+      total += words[best]
+    }
+    const theme = [...centroid].sort((a, b) => b[1] - a[1]).slice(0, 5).map(([t]) => t)
+    batches.push({ id: batches.length + 1, theme, words: total, members })
+  }
+  const batchOf = new Map()
+  for (const b of batches) for (const i of b.members) batchOf.set(i, b.id)
+  const pairs = new Map()
+  for (let i = 0; i < pages.length; i++) {
+    const near = []
+    for (let j = 0; j < pages.length; j++) {
+      if (i === j || batchOf.get(i) === batchOf.get(j)) continue
+      const sc = dot(vecs[i], vecs[j])
+      if (sc >= crossThreshold) near.push([j, sc])
+    }
+    near.sort((a, b) => b[1] - a[1])
+    for (const [j, sc] of near.slice(0, crossPerPage)) {
+      const [a, b] = i < j ? [i, j] : [j, i]
+      pairs.set(`${a}|${b}`, { a: pages[a].url, b: pages[b].url, similarity: Math.round(sc * 100) / 100 })
+    }
+  }
+  const crossBatch = [...pairs.values()].sort((x, y) => y.similarity - x.similarity).slice(0, crossMax)
+  return {
+    budgetWords,
+    batches: batches.map((b) => ({ id: b.id, theme: b.theme, words: b.words, pages: b.members.map((i) => ({ url: pages[i].url, title: pages[i].title, words: words[i], file: pages[i].file })) })),
+    crossBatch,
+  }
 }
