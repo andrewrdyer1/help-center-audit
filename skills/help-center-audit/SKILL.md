@@ -60,6 +60,18 @@ characters, so a match means something), an optional `reason`, and `appliesTo`: 
 for a pattern matched against the address or title, or a piece of the address or title. If it says the file has
 problems, fix the file. Do not weaken a rule to make it pass.
 
+## 2c. Release notes (only if the user gave you some)
+
+If the user has release notes to review (a draft they are about to publish, or a changelog page), read them in:
+
+```bash
+node "${CLAUDE_PLUGIN_ROOT}/scripts/releases.mjs" release-notes.md
+node "${CLAUDE_PLUGIN_ROOT}/scripts/releases.mjs" --url https://example.com/changelog
+```
+
+Files may be `.md`, `.txt`, `.html` or `.pdf`. `--url` reads one public page once if its robots.txt allows it and
+follows no links. Each document is cited as `release:<name>`.
+
 ## 3. Read and write findings
 
 Do not read the whole site at once. Work reading by reading:
@@ -72,6 +84,9 @@ Do not read the whole site at once. Work reading by reading:
 3. If there are source documents, read each (a long one a part at a time) and for each claim in it that a help page
    also makes (a price, a limit, a time frame, a rule), find the page (search `pages/` for the term) and compare. Write
    `findings/source.json`. Do not go looking for a source's every sentence; compare what the help center also says.
+4. If there are release notes, read them and, for each change they announce, find the help center pages that talk about
+   the same thing (search `pages/` for its terms) and compare. Write `findings/release.json`. Also read the notes
+   themselves as a reviewer: wording that is ambiguous, says two things, or promises something without saying what.
 
 Each file is a list of:
 
@@ -98,6 +113,13 @@ Rules:
 - Say what is on the pages, never why or who it affects. Do not count customers or say anybody was affected. A price
   or a limit may be stated only if it is in one of the quotes. Do not say a page is wrong when you only know two
   texts differ, and do not say the source is right: say they differ.
+- Two more kinds for release notes. `affected_by_release`: a help page says something a release note changes or
+  contradicts, with one quote from the release note (`release:<name>`) and one from the page; say what the note
+  changes and what the page still says, not that either is wrong. `release_note_unclear`: a release note is
+  ambiguous or says two things, with quotes from release notes only.
+- A release finding may carry a `suggestion`, a draft of new wording (at most 600 characters) for a person to review.
+  Every number and address in it must already be in one of the quotes or in the release note itself; code refuses a
+  suggestion that adds one. Never put a suggestion on any other kind.
 - No finding without evidence. If you are unsure, leave it out. An empty list is a valid answer.
 
 ## 4. Check and report
@@ -109,6 +131,6 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/report.mjs"
 
 `verify.mjs` reads `findings.json` and every `findings/*.json`, writes `verified.json` and tells you what it dropped and
 why. `report.mjs`
-writes `REPORT.md`. Tell the user how many findings were kept and dropped, what the rules found if you ran them, what the
+writes `REPORT.md`. Tell the user how many findings were kept and dropped, what the rules found if you ran them, and for release notes how many pages they affect (suggestions are drafts, not decisions), what the
 crawl covered, and where `REPORT.md` is. Do not edit the report to add findings that
 verification dropped.

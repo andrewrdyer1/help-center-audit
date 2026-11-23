@@ -171,6 +171,18 @@ export const KINDS = ['contradiction', 'out_of_date', 'ambiguous']
 export const SOURCE_KIND = 'disagrees_with_source'
 export const GROUND_PREFIX = 'ground:'
 export const isGround = (url) => typeof url === 'string' && url.startsWith(GROUND_PREFIX)
+/**
+ * Release notes, to review and to read against the help center.
+ *  - `affected_by_release`: a help page says something a release note changes (or contradicts it). One quote from each side.
+ *  - `release_note_unclear`: a release note is ambiguous or says two things. Quotes from release notes only.
+ * Either may carry a `suggestion`: a draft of new wording for a person to review.
+ */
+export const RELEASE_PREFIX = 'release:'
+export const isRelease = (url) => typeof url === 'string' && url.startsWith(RELEASE_PREFIX)
+export const AFFECTED_KIND = 'affected_by_release'
+export const UNCLEAR_KIND = 'release_note_unclear'
+export const RELEASE_KINDS = [AFFECTED_KIND, UNCLEAR_KIND]
+export const MAX_SUGGESTION = 600
 
 // A finding about content says what is on the pages. It never says who was affected.
 const AFFECTED_CLAIM = /\b(?:customers?|users?|people)\s+(?:are|were|have been|will be)\s+(?:affected|confused|misled)\b/i
@@ -190,14 +202,40 @@ function claimsOutsideQuotes(text, evidence) {
   return null
 }
 
+const FIGURE = /\d[\d,.]*\d|\d/g
+const URL_IN_TEXT = /https?:\/\/[^\s)>\]"']+/gi
+
+function figureIn(figure, text) {
+  const t = normalize(text)
+  const f = figure.toLowerCase().replace(/[.,]+$/, '')
+  const re = new RegExp(`(?<![\\d])${escapeRe(f)}(?![\\d])`)
+  return re.test(t) || re.test(t.replace(/,/g, ''))
+}
+
+/**
+ * A suggested wording is a draft for a person, never a fact. Every figure, price and address in it must be one the
+ * quotes or the release note itself state, so a suggestion cannot introduce a number nobody wrote.
+ */
+function suggestionProblem(suggestion, kept, pages) {
+  if (typeof suggestion !== 'string' || !suggestion.trim()) return 'the suggestion is empty'
+  if (suggestion.length > MAX_SUGGESTION) return `the suggestion is over ${MAX_SUGGESTION} characters`
+  const allowed = [...kept.map((e) => e.quote), ...kept.filter((e) => isRelease(e.url)).map((e) => pages.get(e.url))].join('\n')
+  for (const m of suggestion.matchAll(FIGURE)) if (!figureIn(m[0], allowed)) return `the suggestion contains "${m[0]}", which is not in a quote or the release note`
+  for (const m of suggestion.matchAll(URL_IN_TEXT)) if (!normalize(allowed).includes(normalize(m[0]).replace(/[.,;]+$/, ''))) return `the suggestion contains an address that is not in a quote or the release note`
+  if (AFFECTED_CLAIM.test(suggestion)) return 'the suggestion says who was affected'
+  return null
+}
+
 /** Every rule a finding has to meet, and a reason when it does not. Evidence is checked against `pages` (url -> text). */
 export function checkFinding(f, pages) {
   if (!f || typeof f !== 'object') return { ok: false, reason: 'not an object' }
   const isSource = f.kind === SOURCE_KIND
-  if (!isSource && !KINDS.includes(f.kind)) return { ok: false, reason: `unknown kind "${f.kind}"` }
+  const isReleaseKind = RELEASE_KINDS.includes(f.kind)
+  if (!isSource && !isReleaseKind && !KINDS.includes(f.kind)) return { ok: false, reason: `unknown kind "${f.kind}"` }
   if (typeof f.title !== 'string' || !f.title.trim() || typeof f.claim !== 'string' || !f.claim.trim()) return { ok: false, reason: 'missing title or claim' }
   if (AFFECTED_CLAIM.test(f.title) || AFFECTED_CLAIM.test(f.claim)) return { ok: false, reason: 'says who was affected' }
   if (!Array.isArray(f.evidence) || f.evidence.length === 0) return { ok: false, reason: 'no evidence' }
+  if (f.suggestion !== undefined && !isReleaseKind) return { ok: false, reason: 'a suggestion belongs to a release note finding' }
   const kept = []
   for (const e of f.evidence) {
     const text = pages.get(e?.url)
@@ -208,14 +246,28 @@ export function checkFinding(f, pages) {
   const outside = claimsOutsideQuotes(`${f.title} ${f.claim}`, kept)
   if (outside) return { ok: false, reason: `counts people or states money not found in a quote ("${outside}")` }
   const fromSource = kept.filter((e) => isGround(e.url))
-  const fromPages = kept.filter((e) => !isGround(e.url))
+  const fromRelease = kept.filter((e) => isRelease(e.url))
+  const fromPages = kept.filter((e) => !isGround(e.url) && !isRelease(e.url))
   if (isSource) {
+    if (fromRelease.length) return { ok: false, reason: 'quotes from a release note belong to a release note finding' }
     if (!fromSource.length || !fromPages.length) return { ok: false, reason: 'a comparison with a source document needs one quote from the source and one from a help center page' }
+  } else if (f.kind === AFFECTED_KIND) {
+    if (fromSource.length) return { ok: false, reason: 'quotes from a source document belong to a disagrees_with_source finding' }
+    if (!fromRelease.length || !fromPages.length) return { ok: false, reason: 'a release note finding about a page needs one quote from the release note and one from the help center page' }
+  } else if (f.kind === UNCLEAR_KIND) {
+    if (fromSource.length || fromPages.length) return { ok: false, reason: 'a release_note_unclear finding quotes release notes only' }
   } else {
     if (fromSource.length) return { ok: false, reason: 'quotes from a source document belong to a disagrees_with_source finding' }
+    if (fromRelease.length) return { ok: false, reason: 'quotes from a release note belong to a release note finding' }
     if (f.kind === 'contradiction' && new Set(fromPages.map((e) => e.url)).size < 2) return { ok: false, reason: 'a contradiction needs quotes from two different pages' }
   }
-  return { ok: true, finding: { kind: f.kind, title: f.title.trim(), claim: f.claim.trim(), evidence: kept } }
+  const finding = { kind: f.kind, title: f.title.trim(), claim: f.claim.trim(), evidence: kept }
+  if (f.suggestion !== undefined) {
+    const problem = suggestionProblem(f.suggestion, kept, pages)
+    if (problem) return { ok: false, reason: problem }
+    finding.suggestion = f.suggestion.trim()
+  }
+  return { ok: true, finding }
 }
 
 // ---------------------------------------------------------------------------------------------------------------------

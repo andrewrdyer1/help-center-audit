@@ -31,7 +31,7 @@ export async function readGroundFile(file) {
   throw new Error(`${basename(file)}: unsupported type "${ext}". Use .pdf, .md, .txt or .html.`)
 }
 
-export async function readGround(files) {
+export async function readGround(files, prefix = GROUND_PREFIX) {
   const used = new Set()
   const docs = []
   for (const f of files) {
@@ -39,7 +39,7 @@ export async function readGround(files) {
     let name = basename(f)
     for (let n = 2; used.has(name); n++) name = `${basename(f, extname(f))}-${n}${extname(f)}`
     used.add(name)
-    docs.push({ url: GROUND_PREFIX + name, name, words: wordCount(text), text })
+    docs.push({ url: prefix + name, name, words: wordCount(text), text })
   }
   return docs
 }

@@ -2,14 +2,14 @@
 // Keeps only findings whose quotes are really on the pages (or source documents) they name.
 //   node verify.mjs [--out help-center-audit-out]
 // Reads findings.json and every findings/*.json (one per reading, if you wrote them that way), the crawled pages and,
-// if ground.mjs was run, the source documents.
+// if ground.mjs or releases.mjs was run, the source documents and release notes.
 import { readdir, readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { checkFinding } from './lib.mjs'
 
-export function verify(findings, pageList, sources = []) {
-  const pages = new Map([...pageList, ...sources].map((p) => [p.url, p.text]))
+export function verify(findings, pageList, sources = [], releases = []) {
+  const pages = new Map([...pageList, ...sources, ...releases].map((p) => [p.url, p.text]))
   const kept = []
   const dropped = []
   const seen = new Set()
@@ -21,7 +21,8 @@ export function verify(findings, pageList, sources = []) {
     seen.add(key)
     kept.push(r.finding)
   }
-  return { kept, dropped, sources: sources.map((s) => ({ url: s.url, name: s.name, words: s.words })) }
+  const summary = (d) => ({ url: d.url, name: d.name, words: d.words })
+  return { kept, dropped, sources: sources.map(summary), releases: releases.map(summary) }
 }
 
 async function readJson(path, fallback) {
@@ -38,9 +39,10 @@ async function main() {
   for (const f of files) findings = findings.concat(await readJson(join(dir, 'findings', f)))
   const { pages } = await readJson(join(dir, 'pages.json'))
   const { documents } = await readJson(join(dir, 'ground.json'), { documents: [] })
-  const { kept, dropped, sources } = verify(findings, pages, documents)
-  await writeFile(join(dir, 'verified.json'), JSON.stringify({ kept, dropped, sources }, null, 2))
-  console.log(`Kept ${kept.length} of ${kept.length + dropped.length} findings${sources.length ? ` (compared with ${sources.length} source document${sources.length === 1 ? '' : 's'})` : ''}.`)
+  const { documents: notes } = await readJson(join(dir, 'releases.json'), { documents: [] })
+  const { kept, dropped, sources, releases } = verify(findings, pages, documents, notes)
+  await writeFile(join(dir, 'verified.json'), JSON.stringify({ kept, dropped, sources, releases }, null, 2))
+  console.log(`Kept ${kept.length} of ${kept.length + dropped.length} findings${sources.length ? ` (compared with ${sources.length} source document${sources.length === 1 ? '' : 's'})` : ''}${releases.length ? ` (${releases.length} release note document${releases.length === 1 ? '' : 's'} read)` : ''}.`)
   for (const d of dropped) console.log(`  dropped: ${d.title} (${d.reason})`)
 }
 

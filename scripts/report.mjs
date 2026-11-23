@@ -6,6 +6,9 @@ import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 
 const SOURCE = 'disagrees_with_source'
+const AFFECTED = 'affected_by_release'
+const UNCLEAR = 'release_note_unclear'
+const label = (u) => (u.startsWith('ground:') ? `Source document: ${u.slice(7)}` : u.startsWith('release:') ? `Release note: ${u.slice(8)}` : u)
 const LABEL = { contradiction: 'Pages that contradict each other', out_of_date: 'Pages that look out of date', ambiguous: 'Passages that can be read two ways' }
 
 export function renderReport(analysis, verified, rules = null) {
@@ -22,23 +25,41 @@ export function renderReport(analysis, verified, rules = null) {
     L.push(`### ${LABEL[kind]} (${rows.length})`, '')
     for (const f of rows) {
       L.push(`**${f.title}**`, '', f.claim, '')
-      for (const e of f.evidence) L.push(`- ${e.url.startsWith('ground:') ? `Source document: ${e.url.slice(7)}` : e.url}  \n  > ${e.quote.replace(/\n+/g, ' ')}`)
+      for (const e of f.evidence) L.push(`- ${label(e.url)}  \n  > ${e.quote.replace(/\n+/g, ' ')}`)
       L.push('')
     }
   }
   const sources = verified.sources ?? []
+  const releases = verified.releases ?? []
   if (sources.length) {
     const rows = verified.kept.filter((f) => f.kind === SOURCE)
     L.push('## Compared with your source documents', '')
     L.push(`Read: ${sources.map((d) => `${d.name} (${d.words} words)`).join(', ')}. A finding here means a help center page and a source document state different things. It does not say which is right.`, '')
     for (const f of rows) {
       L.push(`**${f.title}**`, '', f.claim, '')
-      for (const e of f.evidence) L.push(`- ${e.url.startsWith('ground:') ? `Source document: ${e.url.slice(7)}` : e.url}  \n  > ${e.quote.replace(/\n+/g, ' ')}`)
+      for (const e of f.evidence) L.push(`- ${label(e.url)}  \n  > ${e.quote.replace(/\n+/g, ' ')}`)
       L.push('')
     }
     if (!rows.length) L.push('No disagreements held up in what was compared. That means none were found, not that the source is fully covered: only the pages and passages Claude compared were checked.', '')
   }
-  if (!verified.kept.length && !sources.length) L.push('No findings of this kind held up. That means none were found in the pages read, not that there are none.', '')
+  if (!verified.kept.length && !sources.length && !releases.length) L.push('No findings of this kind held up. That means none were found in the pages read, not that there are none.', '')
+
+  if (releases.length) {
+    L.push('## Release notes', '')
+    L.push(`Read: ${releases.map((d) => `${d.name} (${d.words} words)`).join(', ')}. Each item pairs a quote from the release notes with a quote from the help center page they affect. A suggestion is a draft for a person to review: its figures and addresses are checked against the notes and the quotes, its wording is not.`, '')
+    const show = (title, rows) => {
+      L.push(`### ${title} (${rows.length})`, '')
+      for (const f of rows) {
+        L.push(`**${f.title}**`, '', f.claim, '')
+        for (const e of f.evidence) L.push(`- ${label(e.url)}  \n  > ${e.quote.replace(/\n+/g, ' ')}`)
+        if (f.suggestion) L.push('', `  Suggested wording (a draft, for a person to review):`, `  > ${f.suggestion.replace(/\n+/g, ' ')}`)
+        L.push('')
+      }
+      if (!rows.length) L.push('None held up in what was compared. That means none were found, not that there are none.', '')
+    }
+    show('Help center pages the release notes affect', verified.kept.filter((f) => f.kind === AFFECTED))
+    show('Release notes that are unclear', verified.kept.filter((f) => f.kind === UNCLEAR))
+  }
 
   if (rules) {
     L.push('## Checked against your rules', '')
